@@ -404,6 +404,9 @@ class TestExpval:
         (qml.Hermitian, [1, 0], 1, [np.array([[1, 1j], [-1j, 1]])]),
         (qml.Hermitian, [0, 1], 1, [np.array([[1, 1j], [-1j, 1]])]),
         (qml.Hermitian, [1/math.sqrt(2), -1/math.sqrt(2)], 1, [np.array([[1, 1j], [-1j, 1]])]),
+        (qml.Hermitian, [1/math.sqrt(2), -1/math.sqrt(2)], 0.5, [np.array([[0, 0], [0, 1]])]),
+        (qml.Hermitian, [1, 0], 0, [np.array([[0, 0], [0, 1]])]),
+        (qml.Hermitian, [0, 1], 1, [np.array([[0, 0], [0, 1]])]),
     ])
     # fmt: on
     def test_expval_single_wire_with_parameters(self, simulator_device_1_wire, tol, operation, input, expected_output, par):
