@@ -1,4 +1,4 @@
-# Copyright 2019 Xanadu Quantum Technologies Inc.
+# Copyright 2019-2020 Xanadu Quantum Technologies Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ with open("pennylane_cirq/_version.py") as f:
 # Requirements should be as minimal as possible.
 # Avoid pinning, and use minimum version numbers
 # only where required.
-requirements = ["pennylane", "cirq"]
+requirements = ["pennylane>=0.11", "cirq"]
 
 info = {
     "name": "PennyLane-Cirq",
@@ -34,10 +34,12 @@ info = {
     "url": "http://xanadu.ai",
     "license": "Apache License 2.0",
     "packages": ["pennylane_cirq"],
-    "entry_points": {"pennylane.plugins": ["cirq.simulator = pennylane_cirq:SimulatorDevice"]},
+    "entry_points": {"pennylane.plugins": ["cirq.simulator = pennylane_cirq:SimulatorDevice",
+                                           "cirq.mixedsimulator = pennylane_cirq:MixedStateSimulatorDevice"],},
     # Place a one line description here. This will be shown by pip
     "description": "PennyLane plugin for Cirq",
     "long_description": open("README.rst").read(),
+    "long_description_content_type": "text/x-rst",
     # The name of the folder containing the plugin
     "provides": ["pennylane_cirq"],
     "install_requires": requirements,
@@ -56,9 +58,9 @@ classifiers = [
     "Programming Language :: Python",
     # Make sure to specify here the versions of Python supported
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.5",
     "Programming Language :: Python :: 3.6",
     "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Scientific/Engineering :: Physics",
 ]

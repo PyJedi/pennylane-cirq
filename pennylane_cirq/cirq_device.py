@@ -1,4 +1,4 @@
-# Copyright 2019 Xanadu Quantum Technologies Inc.
+# Copyright 2019-2020 Xanadu Quantum Technologies Inc.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,31 +32,43 @@ Code details
 ~~~~~~~~~~~~
 """
 import abc
+from collections.abc import Iterable  # pylint: disable=no-name-in-module
+from collections import OrderedDict
+
 import cirq
 import numpy as np
 import pennylane as qml
 from pennylane import QubitDevice
 from pennylane.operation import Operation
+from pennylane.wires import Wires
 
 from ._version import __version__
-from .cirq_interface import CirqOperation
+from .cirq_operation import CirqOperation
+
 
 class CirqDevice(QubitDevice, abc.ABC):
     """Abstract base device for PennyLane-Cirq.
 
     Args:
-        wires (int): the number of modes to initialize the device in
+        wires (int or Iterable[Number, str]]): Number of subsystems represented by the device,
+            or iterable that contains unique labels for the subsystems as numbers (i.e., ``[-1, 0, 2]``)
+            or strings (``['ancilla', 'q1', 'q2']``).
         shots (int): Number of circuit evaluations/random samples used
             to estimate expectation values of observables. Shots need to be >= 1.
-        qubits (List[cirq.Qubit]): a list of Cirq qubits that are used
-            as wires. The wire number corresponds to the index in the list.
-            By default, an array of ``cirq.LineQubit`` instances is created.
+        qubits (List[cirq.Qubit]): A list of Cirq qubits that are used
+            as wires. By default, an array of ``cirq.LineQubit`` instances is created.
+            Wires are mapped to qubits using Cirq's internal mechanism for ordering
+            qubits. For example, if ``wires=2`` and ``qubits=[q1, q2]``, with
+            ``q1>q2``, then the wire indices 0 and 1 are mapped to q2 and q1, respectively.
+            If the user provides their own wire labels, e.g., ``wires=["alice", "bob"]``, and the
+            qubits are the same as the previous example, then "alice" would map to qubit q2
+            and "bob" would map to qubit q1.
     """
 
-    name = "Cirq Abstract PennyLane plugin baseclass"
-    pennylane_requires = ">=0.8.0"
+    name = "Cirq Abstract PennyLane plugin base class"
+    pennylane_requires = ">=0.11.0"
     version = __version__
-    author = "Johannes Jakob Meyer"
+    author = "Xanadu Inc"
     _capabilities = {
         "model": "qubit",
         "tensor_observables": True,
@@ -66,21 +78,31 @@ class CirqDevice(QubitDevice, abc.ABC):
     short_name = "cirq.base_device"
 
     def __init__(self, wires, shots, analytic, qubits=None):
-        super().__init__(wires, shots, analytic)
 
-        self.circuit = None
+        if not isinstance(wires, Iterable):
+            # interpret wires as the number of consecutive wires
+            wires = range(wires)
+        num_wires = len(wires)
 
         if qubits:
-            if wires != len(qubits):
+            if num_wires != len(qubits):
                 raise qml.DeviceError(
                     "The number of given qubits and the specified number of wires have to match. Got {} wires and {} qubits.".format(
                         wires, len(qubits)
                     )
                 )
-
-            self.qubits = qubits
         else:
-            self.qubits = [cirq.LineQubit(wire) for wire in range(wires)]
+            qubits = [cirq.LineQubit(idx) for idx in range(num_wires)]
+
+        # cirq orders the subsystems based on a total order defined on qubits.
+        # For consistency, this plugin uses that same total order
+        self._unsorted_qubits = qubits
+        self.qubits = sorted(qubits)
+
+        super().__init__(wires, shots, analytic)
+
+        self.circuit = None
+        self.cirq_device = None
 
         # Add inverse operations
         self._inverse_operation_map = {}
@@ -92,9 +114,7 @@ class CirqDevice(QubitDevice, abc.ABC):
             inverted_operation = CirqOperation(self._operation_map[key].parametrization)
             inverted_operation.inv()
 
-            self._inverse_operation_map[
-                key + Operation.string_for_inverse
-            ] = inverted_operation
+            self._inverse_operation_map[key + Operation.string_for_inverse] = inverted_operation
 
         self._complete_operation_map = {
             **self._operation_map,
@@ -146,7 +166,10 @@ class CirqDevice(QubitDevice, abc.ABC):
         # pylint: disable=missing-function-docstring
         super().reset()
 
-        self.circuit = cirq.Circuit()
+        if self.cirq_device:
+            self.circuit = cirq.Circuit(device=self.cirq_device)
+        else:
+            self.circuit = cirq.Circuit()
 
     @property
     def observables(self):
@@ -194,10 +217,9 @@ class CirqDevice(QubitDevice, abc.ABC):
         if cirq_operation:
             cirq_operation.parametrize(*operation.parameters)
 
+            device_wires = self.map_wires(operation.wires)
             self.circuit.append(
-                cirq_operation.apply(
-                    *[self.qubits[wire] for wire in operation.wires]
-                )
+                cirq_operation.apply(*[self.qubits[w] for w in device_wires.labels])
             )
 
     def apply(self, operations, **kwargs):
@@ -207,7 +229,9 @@ class CirqDevice(QubitDevice, abc.ABC):
         for i, operation in enumerate(operations):
             if i > 0 and operation.name in {"BasisState", "QubitStateVector"}:
                 raise qml.DeviceError(
-                    "The operation {} is only supported at the beginning of a circuit.".format(operation.name)
+                    "The operation {} is only supported at the beginning of a circuit.".format(
+                        operation.name
+                    )
                 )
 
             if operation.name == "BasisState":
@@ -222,3 +246,10 @@ class CirqDevice(QubitDevice, abc.ABC):
         # Diagonalize the given observables
         for operation in rotations:
             self._apply_operation(operation)
+
+    def define_wire_map(self, wires):  # pylint: disable=missing-function-docstring
+        cirq_order = np.argsort(self._unsorted_qubits)
+        consecutive_wires = Wires(cirq_order)
+
+        wire_map = zip(wires, consecutive_wires)
+        return OrderedDict(wire_map)
